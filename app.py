@@ -31,34 +31,34 @@ if ticker:
 
         # 1. ROE > 12%
         roe = info.get("returnOnEquity", None)
-        results.append(("Return on Equity > 12%", roe, roe and roe > 0.12))
+        results.append(("Return on Equity > 12%", roe, roe is not None and roe > 0.12))
 
         # 2. ROA > 12%
         roa = info.get("returnOnAssets", None)
-        results.append(("Return on Assets > 12%", roa, roa and roa > 0.12))
+        results.append(("Return on Assets > 12%", roa, roa is not None and roa > 0.12))
 
         # 3. EPS Trend Positive
-eps_hist = stock.earnings
-if eps_hist is not None and not eps_hist.empty and "Earnings" in eps_hist:
-    eps_growth = eps_hist["Earnings"].pct_change().mean()
-    results.append(("EPS Trend Positive", eps_growth, eps_growth and eps_growth > 0))
-else:
-    results.append(("EPS Trend Positive", None, None))
+        eps_hist = stock.earnings
+        if eps_hist is not None and not eps_hist.empty and "Earnings" in eps_hist:
+            eps_growth = eps_hist["Earnings"].pct_change().mean()
+            results.append(("EPS Trend Positive", eps_growth, eps_growth is not None and eps_growth > 0))
+        else:
+            results.append(("EPS Trend Positive", None, None))
 
         # 4. Net Margin > 20%
         net_margin = info.get("netMargins", None)
-        results.append(("Net Margin > 20%", net_margin, net_margin and net_margin > 0.20))
+        results.append(("Net Margin > 20%", net_margin, net_margin is not None and net_margin > 0.20))
 
         # 5. Gross Margin > 40%
         gross_margin = info.get("grossMargins", None)
-        results.append(("Gross Margin > 40%", gross_margin, gross_margin and gross_margin > 0.40))
+        results.append(("Gross Margin > 40%", gross_margin, gross_margin is not None and gross_margin > 0.40))
 
         # 6. LT Debt < 5x Net Income
         try:
             debt = balance.loc["Long Term Debt"].iloc[0] if not balance.empty else None
             net_income = financials.loc["Net Income"].iloc[0] if not financials.empty else None
             debt_ratio = safe_ratio(debt, net_income)
-            results.append(("LT Debt < 5x Net Income", debt_ratio, debt_ratio and debt_ratio < 5))
+            results.append(("LT Debt < 5x Net Income", debt_ratio, debt_ratio is not None and debt_ratio < 5))
         except:
             results.append(("LT Debt < 5x Net Income", None, None))
 
