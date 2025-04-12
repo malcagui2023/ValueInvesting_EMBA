@@ -15,9 +15,9 @@ period_years = 10 if period == "10y" else 5
 def get_data(ticker):
     stock = yf.Ticker(ticker)
     info = stock.info or {}
-    bs = stock.balance_sheet
-    fin = stock.financials
-    earnings = stock.earnings
+    bs = stock.balance_sheet if stock.balance_sheet is not None else pd.DataFrame()
+    fin = stock.financials if stock.financials is not None else pd.DataFrame()
+    earnings = stock.earnings if stock.earnings is not None else pd.DataFrame()
     hist = stock.history(period="max")
     div = stock.dividends if stock.dividends is not None else pd.Series(dtype="float64")
     return info, bs, fin, earnings, hist, div
@@ -59,7 +59,6 @@ if ticker:
         results = []
         trend_tables = {}
 
-        # Filter years to the latest N years
         available_years = list(fin.columns.year)
         selected_years = sorted(available_years)[-period_years:]
 
@@ -102,10 +101,10 @@ if ticker:
         results.append(("Net Margin > 20%", net_margin_pass))
         trend_tables["Net Margin"] = net_margin_check
 
-        # EPS (from earnings)
+        # EPS
         eps_check = []
         eps_pass = None
-        if not earnings.empty:
+        if earnings is not None and not earnings.empty:
             eps = earnings["Earnings"]
             eps_diff = eps.diff().dropna()
             eps_pass = (eps_diff > 0).all()
@@ -117,7 +116,7 @@ if ticker:
         else:
             results.append(("EPS Trend Upward", None))
 
-        # Display summary
+        # Show checklist summary
         for label, passed in results:
             col1, col2 = st.columns([4, 1])
             col1.write(label)
@@ -132,7 +131,6 @@ if ticker:
         score = sum(1 for _, p in results if p is True)
         total = len(results)
         st.markdown(f"### Final Score: **{score}/{total}**")
-
         if score >= 4:
             st.success("🟢 Strong Candidate")
         elif score >= 2:
@@ -140,16 +138,18 @@ if ticker:
         else:
             st.error("🔴 Avoid")
 
-        # Show trendline + table for each
+        # Show breakdown
         st.markdown("---")
         st.subheader("📊 Year-by-Year Breakdown")
         for metric, data in trend_tables.items():
             st.markdown(f"**{metric}**")
             df = pd.DataFrame(data, columns=["Year", "Value", "Passed"]).set_index("Year")
             st.line_chart(df["Value"])
-            st.dataframe(df.style.applymap(lambda v: "background-color: #d4edda" if v is True else ("background-color: #f8d7da" if v is False else ""), subset=["Passed"]))
+            st.dataframe(df.style.applymap(
+                lambda v: "background-color: #d4edda" if v is True else ("background-color: #f8d7da" if v is False else ""),
+                subset=["Passed"]))
 
-        # Manual Review
+        # Manual review section
         st.markdown("---")
         st.subheader("📌 Manual Review Required")
         st.info(
