@@ -3,8 +3,6 @@ import yfinance as yf
 import pandas as pd
 
 st.set_page_config(page_title="Value Investing Checklist", layout="wide")
-
-# --- UI ---
 st.title("📊 Active Value Investor – Checklist App")
 
 ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
@@ -14,14 +12,15 @@ if ticker:
         stock = yf.Ticker(ticker)
         info = stock.info or {}
         hist = stock.history(period="10y")
-        financials = stock.financials or pd.DataFrame()
-        balance = stock.balance_sheet or pd.DataFrame()
-        cashflow = stock.cashflow or pd.DataFrame()
+        financials = stock.financials if stock.financials is not None else pd.DataFrame()
+        balance = stock.balance_sheet if stock.balance_sheet is not None else pd.DataFrame()
+        cashflow = stock.cashflow if stock.cashflow is not None else pd.DataFrame()
 
-        # Display price chart
+        st.success(f"Data loaded for {info.get('shortName', ticker)}")
+
+        # Price chart
         st.line_chart(hist["Close"])
-        
-        # --- Checklist Calculations ---
+
         def safe_ratio(numerator, denominator):
             try:
                 return round(numerator / denominator, 2) if denominator != 0 else None
@@ -38,7 +37,7 @@ if ticker:
         roa = info.get("returnOnAssets", None)
         results.append(("Return on Assets > 12%", roa, roa and roa > 0.12))
 
-        # 3. EPS Trend
+        # 3. EPS Trend Positive
         eps_hist = stock.earnings
         if not eps_hist.empty and "Earnings" in eps_hist:
             eps_growth = eps_hist["Earnings"].pct_change().mean()
@@ -56,23 +55,23 @@ if ticker:
 
         # 6. LT Debt < 5x Net Income
         try:
-            debt = balance.loc["Long Term Debt"].iloc[0]
-            net_income = financials.loc["Net Income"].iloc[0]
+            debt = balance.loc["Long Term Debt"].iloc[0] if not balance.empty else None
+            net_income = financials.loc["Net Income"].iloc[0] if not financials.empty else None
             debt_ratio = safe_ratio(debt, net_income)
             results.append(("LT Debt < 5x Net Income", debt_ratio, debt_ratio and debt_ratio < 5))
         except:
             results.append(("LT Debt < 5x Net Income", None, None))
 
-        # 7. Organized Labor (Manual)
+        # 7. Organized Labor (Manual Input)
         results.append(("Organized Labor (Manual Input)", "⚠️", None))
 
-        # 8. Pricing Power (Manual)
-        results.append(("Pricing Power Matches Inflation (Manual)", "⚠️", None))
+        # 8. Pricing Power (Manual Input)
+        results.append(("Pricing Power Matches Inflation", "⚠️", None))
 
-        # 9. Return on Retained Capital (Manual or Advanced Calc)
-        results.append(("Return on Retained Capital > 18% (Est.)", "⚠️", None))
+        # 9. Return on Retained Capital (Advanced/Manual)
+        results.append(("Return on Retained Capital > 18%", "⚠️", None))
 
-        # 10. Dividend/Buybacks
+        # 10. Dividends/Buybacks
         dividends = stock.dividends
         dividend_consistent = not dividends.empty and dividends.min() > 0
         results.append(("Dividend History (No Cuts)", "Yes" if dividend_consistent else "No", dividend_consistent))
@@ -80,7 +79,7 @@ if ticker:
         # 11. Barriers to Entry (Manual)
         results.append(("Barriers to Entry (Manual Input)", "⚠️", None))
 
-        # --- Scoreboard ---
+        # --- Display Results ---
         st.subheader("Checklist Results")
         score = 0
         total = len(results)
