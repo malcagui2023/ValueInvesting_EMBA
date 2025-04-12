@@ -157,5 +157,5 @@ if ticker:
     "- 🏭 **Organized Labor Exposure**\n"
     "- 📈 **Pricing Power / Inflation Pass-through**"
 )
-
-::contentReference[oaicite:0]{index=0}
+except Exception as e:
+        st.error(f"Error fetching data: {e}")
