@@ -49,9 +49,11 @@ if ticker:
         # --- 1. ROE ---
         roe = info.get("returnOnEquity", None)
         results.append(("Return on Equity > 12%", roe, roe and roe > 0.12))
+
         # --- 2. ROA ---
         roa = info.get("returnOnAssets", None)
         results.append(("Return on Assets > 12%", roa, roa and roa > 0.12))
+
         # --- 3. EPS Growth ---
         if not earnings.empty:
             eps_growth = earnings["Earnings"].pct_change().mean()
@@ -89,8 +91,9 @@ if ticker:
             cuts = min_div[min_div == 0].count()
             cut_text = f"Cut in {cuts} year(s)" if cuts > 0 else "No Cuts"
             results.append(("Dividend History", f"{len(years)} years | {cut_text}", cuts == 0))
+            trends["Dividends"] = dividends
 
-        # Score & Display
+        # --- Score & Display ---
         score = sum(1 for _, _, passed in results if passed)
         total = len(results)
         for label, value, passed in results:
@@ -105,3 +108,31 @@ if ticker:
         if score >= 10: st.success("🟢 Strong Candidate")
         elif score >= 7: st.warning("🟡 Watchlist")
         else: st.error("🔴 Avoid")
+
+        # --- Trend Charts ---
+        if trends:
+            st.markdown("---")
+            st.subheader("📊 Trends Over Time")
+            for label, series in trends.items():
+                if not series.empty:
+                    st.line_chart(series, use_container_width=True)
+
+        # --- Manual Review Reminder ---
+        st.markdown("---")
+        st.subheader("📌 Manual Review Required")
+        st.info(
+            "- 🧱 **Barriers to Entry** (brand, IP, network, cost moat)\n"
+            "- 🏭 **Organized Labor Exposure**\n"
+            "- 📈 **Pricing Power / Inflation Pass-through**"
+        )
+
+        # --- Download as CSV ---
+        st.markdown("---")
+        st.subheader("📥 Download Results")
+        csv_data = pd.DataFrame(results, columns=["Checklist Item", "Value", "Passed"])
+        buffer = BytesIO()
+        csv_data.to_csv(buffer, index=False)
+        st.download_button("Download Checklist as CSV", buffer.getvalue(), file_name=f"{ticker}_checklist.csv", mime="text/csv")
+
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
