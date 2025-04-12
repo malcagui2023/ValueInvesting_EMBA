@@ -4,36 +4,46 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 
-# App setup
 st.set_page_config(page_title="Value Investing Checklist", layout="wide")
-st.title("📊 Value Investing Checklist")
+st.title("📊 Value Investing Checklist (Year-by-Year)")
 
 ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
-period = st.selectbox("Select time range", ["10y", "5y"], index=0)
+period = st.selectbox("Select analysis period", ["10y", "5y"], index=0)
+period_years = 10 if period == "10y" else 5
 
-# Fix: Don't return yf.Ticker directly from cache
 @st.cache_data
-def get_cached_data(ticker, period):
+def get_data(ticker):
     stock = yf.Ticker(ticker)
     info = stock.info or {}
-    hist = stock.history(period=period)
-    fin = stock.financials if stock.financials is not None else pd.DataFrame()
-    bal = stock.balance_sheet if stock.balance_sheet is not None else pd.DataFrame()
-    cf = stock.cashflow if stock.cashflow is not None else pd.DataFrame()
-    earnings = stock.earnings if stock.earnings is not None else pd.DataFrame()
-    dividends = stock.dividends if stock.dividends is not None else pd.Series(dtype="float64")
-    return info, hist, fin, bal, cf, earnings, dividends
+    bs = stock.balance_sheet
+    fin = stock.financials
+    earnings = stock.earnings
+    hist = stock.history(period="max")
+    div = stock.dividends if stock.dividends is not None else pd.Series(dtype="float64")
+    return info, bs, fin, earnings, hist, div
 
-def safe_ratio(a, b):
+def check_all_years(metric_series, threshold, comparison='>'):
+    checks = []
+    for year, value in metric_series.items():
+        if value is None:
+            checks.append((year, value, None))
+            continue
+        if comparison == '>':
+            checks.append((year, value, value > threshold))
+        elif comparison == '<':
+            checks.append((year, value, value < threshold))
+    passed_all = all([c[2] for c in checks if c[2] is not None])
+    return checks, passed_all
+
+def safe_ratio(numerator, denominator):
     try:
-        return round(a / b, 2) if b else None
+        return numerator / denominator if denominator and denominator != 0 else None
     except:
         return None
 
 if ticker:
     try:
-        info, hist, fin, bal, cf, earnings, dividends = get_cached_data(ticker, period)
-        stock = yf.Ticker(ticker)  # Used only outside cache
+        info, bs, fin, earnings, hist, div = get_data(ticker)
 
         st.subheader("📈 Price History")
         fig, ax = plt.subplots(figsize=(10, 3))
@@ -44,84 +54,102 @@ if ticker:
         st.pyplot(fig)
 
         st.markdown("---")
-        st.subheader("✅ Checklist Results")
+        st.subheader("✅ Checklist Results (Must Pass Every Year)")
 
         results = []
-        trends = {}
+        trend_tables = {}
 
-        # 1. ROE
-        roe = info.get("returnOnEquity", None)
-        results.append(("Return on Equity > 12%", roe, roe is not None and roe > 0.12))
+        # Filter years to the latest N years
+        available_years = list(fin.columns.year)
+        selected_years = sorted(available_years)[-period_years:]
 
-        # 2. ROA
-        roa = info.get("returnOnAssets", None)
-        results.append(("Return on Assets > 12%", roa, roa is not None and roa > 0.12))
+        # ROE
+        roe_series = {}
+        for year in selected_years:
+            try:
+                net = fin[fin.columns[fin.columns.year == year]].loc["Net Income"].values[0]
+                equity = bs[bs.columns[bs.columns.year == year]].loc["Total Stockholder Equity"].values[0]
+                roe_series[year] = safe_ratio(net, equity)
+            except:
+                roe_series[year] = None
+        roe_check, roe_pass = check_all_years(roe_series, 0.12)
+        results.append(("ROE > 12%", roe_pass))
+        trend_tables["ROE"] = roe_check
 
-        # 3. EPS Trend
-        if earnings is not None and not earnings.empty:
-            eps_growth = earnings["Earnings"].pct_change().mean()
-            results.append(("EPS Trend Positive", eps_growth, eps_growth is not None and eps_growth > 0))
-            trends["EPS"] = earnings["Earnings"]
+        # ROA
+        roa_series = {}
+        for year in selected_years:
+            try:
+                net = fin[fin.columns[fin.columns.year == year]].loc["Net Income"].values[0]
+                assets = bs[bs.columns[bs.columns.year == year]].loc["Total Assets"].values[0]
+                roa_series[year] = safe_ratio(net, assets)
+            except:
+                roa_series[year] = None
+        roa_check, roa_pass = check_all_years(roa_series, 0.12)
+        results.append(("ROA > 12%", roa_pass))
+        trend_tables["ROA"] = roa_check
+
+        # Net Margin
+        net_margin_series = {}
+        for year in selected_years:
+            try:
+                revenue = fin[fin.columns[fin.columns.year == year]].loc["Total Revenue"].values[0]
+                net_income = fin[fin.columns[fin.columns.year == year]].loc["Net Income"].values[0]
+                net_margin_series[year] = safe_ratio(net_income, revenue)
+            except:
+                net_margin_series[year] = None
+        net_margin_check, net_margin_pass = check_all_years(net_margin_series, 0.20)
+        results.append(("Net Margin > 20%", net_margin_pass))
+        trend_tables["Net Margin"] = net_margin_check
+
+        # EPS (from earnings)
+        eps_check = []
+        eps_pass = None
+        if not earnings.empty:
+            eps = earnings["Earnings"]
+            eps_diff = eps.diff().dropna()
+            eps_pass = (eps_diff > 0).all()
+            for year in eps.index[-period_years:]:
+                val = eps.loc[year]
+                eps_check.append((year, val, val > 0))
+            results.append(("EPS Trend Upward", eps_pass))
+            trend_tables["EPS"] = eps_check
         else:
-            results.append(("EPS Trend Positive", None, None))
+            results.append(("EPS Trend Upward", None))
 
-        # 4. Net Margin
-        net_margin = info.get("netMargins", None)
-        results.append(("Net Margin > 20%", net_margin, net_margin is not None and net_margin > 0.20))
-
-        # 5. Gross Margin
-        gross_margin = info.get("grossMargins", None)
-        results.append(("Gross Margin > 40%", gross_margin, gross_margin is not None and gross_margin > 0.40))
-
-        # 6. LT Debt to Net Income
-        try:
-            debt = bal.loc["Long Term Debt"].iloc[0] if not bal.empty else None
-            net_income = fin.loc["Net Income"].iloc[0] if not fin.empty else None
-            ratio = safe_ratio(debt, net_income)
-            results.append(("LT Debt < 5x Net Income", ratio, ratio is not None and ratio < 5))
-        except:
-            results.append(("LT Debt < 5x Net Income", None, None))
-
-        # 7. Return on Retained Capital (placeholder)
-        results.append(("Return on Retained Capital > 18%", "⚠️", None))
-
-        # 8. Dividend History
-        if dividends is None or dividends.empty:
-            results.append(("Dividend History", "No Dividends", True))
-        else:
-            years = dividends.index.year.unique().tolist()
-            min_div = dividends.resample("Y").min()
-            cuts = min_div[min_div == 0].count()
-            cut_text = f"Cut in {cuts} year(s)" if cuts > 0 else "No Cuts"
-            results.append(("Dividend History", f"{len(years)} years | {cut_text}", cuts == 0))
-            trends["Dividends"] = dividends
-
-        # Final Score
-        score = sum(1 for _, _, passed in results if passed)
-        total = len(results)
-
-        for label, value, passed in results:
-            col1, col2, col3 = st.columns([3, 2, 1])
+        # Display summary
+        for label, passed in results:
+            col1, col2 = st.columns([4, 1])
             col1.write(label)
-            col2.write(value if value is not None else "—")
-            if passed is True: col3.success("✅")
-            elif passed is False: col3.error("❌")
-            else: col3.warning("⚠️")
+            if passed is True:
+                col2.success("✅")
+            elif passed is False:
+                col2.error("❌")
+            else:
+                col2.warning("⚠️")
 
+        # Final score
+        score = sum(1 for _, p in results if p is True)
+        total = len(results)
         st.markdown(f"### Final Score: **{score}/{total}**")
-        if score >= 10: st.success("🟢 Strong Candidate")
-        elif score >= 7: st.warning("🟡 Watchlist")
-        else: st.error("🔴 Avoid")
 
-        # Trend Charts
-        if trends:
-            st.markdown("---")
-            st.subheader("📊 Trends Over Time")
-            for label, series in trends.items():
-                if not series.empty:
-                    st.line_chart(series, use_container_width=True)
+        if score >= 4:
+            st.success("🟢 Strong Candidate")
+        elif score >= 2:
+            st.warning("🟡 Watchlist")
+        else:
+            st.error("🔴 Avoid")
 
-        # Manual Review Section
+        # Show trendline + table for each
+        st.markdown("---")
+        st.subheader("📊 Year-by-Year Breakdown")
+        for metric, data in trend_tables.items():
+            st.markdown(f"**{metric}**")
+            df = pd.DataFrame(data, columns=["Year", "Value", "Passed"]).set_index("Year")
+            st.line_chart(df["Value"])
+            st.dataframe(df.style.applymap(lambda v: "background-color: #d4edda" if v is True else ("background-color: #f8d7da" if v is False else ""), subset=["Passed"]))
+
+        # Manual Review
         st.markdown("---")
         st.subheader("📌 Manual Review Required")
         st.info(
@@ -130,13 +158,13 @@ if ticker:
             "- 📈 **Pricing Power / Inflation Pass-through**"
         )
 
-        # Download CSV
+        # Download
         st.markdown("---")
-        st.subheader("📥 Download Results")
-        csv_data = pd.DataFrame(results, columns=["Checklist Item", "Value", "Passed"])
+        st.subheader("📥 Download Summary")
+        summary_df = pd.DataFrame(results, columns=["Checklist Item", "Passed"])
         buffer = BytesIO()
-        csv_data.to_csv(buffer, index=False)
-        st.download_button("Download Checklist as CSV", buffer.getvalue(), file_name=f"{ticker}_checklist.csv", mime="text/csv")
+        summary_df.to_csv(buffer, index=False)
+        st.download_button("Download Summary CSV", buffer.getvalue(), file_name=f"{ticker}_checklist_summary.csv", mime="text/csv")
 
     except Exception as e:
         st.error(f"Error fetching data: {e}")
