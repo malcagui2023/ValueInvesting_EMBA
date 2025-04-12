@@ -153,18 +153,5 @@ if ticker:
         st.markdown("---")
         st.subheader("📌 Manual Review Required")
         st.info(
-            "- 🧱 **Barriers to Entry** (brand, IP, network, cost moat)\n"
-            "- 🏭 **Organized Labor Exposure**\n"
-            "- 📈 **Pricing Power / Inflation Pass-through**"
-        )
-
-        # Download
-        st.markdown("---")
-        st.subheader("📥 Download Summary")
-        summary_df = pd.DataFrame(results, columns=["Checklist Item", "Passed"])
-        buffer = BytesIO()
-        summary_df.to_csv(buffer, index=False)
-        st.download_button("Download Summary CSV", buffer.getvalue(), file_name=f"{ticker}_checklist_summary.csv", mime="text/csv")
-
-    except Exception as e:
-        st.error(f"Error fetching data: {e}")
+            "- 🧱 **Barriers to Entry** (brand, IP, network, cost
+::contentReference[oaicite:0]{index=0}
