@@ -2,141 +2,106 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
+from io import BytesIO
 
-# --- Page Config ---
+# App setup
 st.set_page_config(page_title="Value Investing Checklist", layout="wide")
+st.title("📊 Value Investing Checklist")
 
-# --- CSS for Font Size ---
-st.markdown("""
-    <style>
-    .checklist-row {
-        font-size: 1.1em;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- App Title ---
-st.title("📊 Active Value Investor – Checklist App")
-
-# --- Input Section ---
 ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
-period = st.selectbox("Select time range:", ["1y", "3y", "5y", "10y"], index=3)
+period = st.selectbox("Select time range", ["10y", "5y"], index=0)
+
+@st.cache_data
+def get_data(ticker, period):
+    stock = yf.Ticker(ticker)
+    info = stock.info or {}
+    hist = stock.history(period=period)
+    fin = stock.financials if stock.financials is not None else pd.DataFrame()
+    bal = stock.balance_sheet if stock.balance_sheet is not None else pd.DataFrame()
+    cf = stock.cashflow if stock.cashflow is not None else pd.DataFrame()
+    earnings = stock.earnings
+    dividends = stock.dividends
+    return stock, info, hist, fin, bal, cf, earnings, dividends
+
+def safe_ratio(a, b):
+    try:
+        return round(a / b, 2) if b else None
+    except: return None
 
 if ticker:
     try:
-        stock = yf.Ticker(ticker)
-        info = stock.info or {}
-        hist = stock.history(period=period)
-        financials = stock.financials if stock.financials is not None else pd.DataFrame()
-        balance = stock.balance_sheet if stock.balance_sheet is not None else pd.DataFrame()
-        cashflow = stock.cashflow if stock.cashflow is not None else pd.DataFrame()
+        stock, info, hist, fin, bal, cf, earnings, dividends = get_data(ticker, period)
 
-        st.success(f"Data loaded for {info.get('shortName', ticker)}")
-
-        # --- Price Chart ---
-        st.markdown("---")
-        st.subheader("📉 Price Chart")
-
-        fig, ax = plt.subplots(figsize=(10, 4))
-        hist_downsampled = hist["Close"].resample("M").last()
-        ax.plot(hist_downsampled.index, hist_downsampled.values, label="Price", color="blue")
-        ax.set_title(f"{ticker} Stock Price (Monthly)", fontsize=14)
+        st.subheader("📈 Price History")
+        fig, ax = plt.subplots(figsize=(10, 3))
+        hist["Close"].resample("M").last().plot(ax=ax)
+        ax.set_title(f"{ticker} Monthly Closing Prices")
         ax.set_ylabel("Price (USD)")
         ax.grid(True)
-        plt.xticks(rotation=45)
         st.pyplot(fig)
 
-        # --- Checklist Logic ---
-        def safe_ratio(numerator, denominator):
-            try:
-                return round(numerator / denominator, 2) if denominator != 0 else None
-            except:
-                return None
+        st.markdown("---")
+        st.subheader("✅ Checklist Results")
 
         results = []
-        trend_data = []
+        trends = {}
 
-        # 1. ROE > 12%
+        # --- 1. ROE ---
         roe = info.get("returnOnEquity", None)
-        results.append(("Return on Equity > 12%", roe, roe is not None and roe > 0.12, None))
-
-        # 2. ROA > 12%
+        results.append(("Return on Equity > 12%", roe, roe and roe > 0.12))
+        # --- 2. ROA ---
         roa = info.get("returnOnAssets", None)
-        results.append(("Return on Assets > 12%", roa, roa is not None and roa > 0.12, None))
-
-        # 3. EPS Trend Positive
-        eps_hist = stock.earnings
-        if eps_hist is not None and not eps_hist.empty and "Earnings" in eps_hist:
-            eps_growth = eps_hist["Earnings"].pct_change().mean()
-            results.append(("EPS Trend Positive", eps_growth, eps_growth is not None and eps_growth > 0, eps_hist["Earnings"]))
+        results.append(("Return on Assets > 12%", roa, roa and roa > 0.12))
+        # --- 3. EPS Growth ---
+        if not earnings.empty:
+            eps_growth = earnings["Earnings"].pct_change().mean()
+            results.append(("EPS Trend Positive", eps_growth, eps_growth and eps_growth > 0))
+            trends["EPS"] = earnings["Earnings"]
         else:
-            results.append(("EPS Trend Positive", None, None, None))
+            results.append(("EPS Trend Positive", None, None))
 
-        # 4. Net Margin > 20%
+        # --- 4. Net Margin ---
         net_margin = info.get("netMargins", None)
-        results.append(("Net Margin > 20%", net_margin, net_margin is not None and net_margin > 0.20, None))
+        results.append(("Net Margin > 20%", net_margin, net_margin and net_margin > 0.20))
 
-        # 5. Gross Margin > 40%
+        # --- 5. Gross Margin ---
         gross_margin = info.get("grossMargins", None)
-        results.append(("Gross Margin > 40%", gross_margin, gross_margin is not None and gross_margin > 0.40, None))
+        results.append(("Gross Margin > 40%", gross_margin, gross_margin and gross_margin > 0.40))
 
-        # 6. LT Debt < 5x Net Income
+        # --- 6. LT Debt to Net Earnings ---
         try:
-            debt = balance.loc["Long Term Debt"].iloc[0] if not balance.empty else None
-            net_income = financials.loc["Net Income"].iloc[0] if not financials.empty else None
-            debt_ratio = safe_ratio(debt, net_income)
-            results.append(("LT Debt < 5x Net Income", debt_ratio, debt_ratio is not None and debt_ratio < 5, None))
+            debt = bal.loc["Long Term Debt"].iloc[0] if not bal.empty else None
+            net_income = fin.loc["Net Income"].iloc[0] if not fin.empty else None
+            ratio = safe_ratio(debt, net_income)
+            results.append(("LT Debt < 5x Net Income", ratio, ratio and ratio < 5))
         except:
-            results.append(("LT Debt < 5x Net Income", None, None, None))
+            results.append(("LT Debt < 5x Net Income", None, None))
 
-        # 7. Return on Retained Capital (Manual)
-        results.append(("Return on Retained Capital > 18%", "⚠️", None, None))
+        # --- 7. Return on Retained Capital (Manual Placeholder) ---
+        results.append(("Return on Retained Capital > 18%", "⚠️", None))
 
-        # 8. Dividends/Buybacks
-        dividends = stock.dividends
-        dividend_consistent = not dividends.empty and dividends.min() > 0
-        results.append(("Dividend History (No Cuts)", "Yes" if dividend_consistent else "No", dividend_consistent, dividends if not dividends.empty else None))
+        # --- 8. Dividend History ---
+        if dividends.empty:
+            results.append(("Dividend History", "No Dividends", True))
+        else:
+            years = dividends.index.year.unique().tolist()
+            min_div = dividends.resample("Y").min()
+            cuts = min_div[min_div == 0].count()
+            cut_text = f"Cut in {cuts} year(s)" if cuts > 0 else "No Cuts"
+            results.append(("Dividend History", f"{len(years)} years | {cut_text}", cuts == 0))
 
-        # --- Display Results ---
-        st.markdown("---")
-        st.subheader("📋 Checklist Results")
-
-        score = 0
+        # Score & Display
+        score = sum(1 for _, _, passed in results if passed)
         total = len(results)
-
-        for label, value, passed, trend in results:
-            col1, col2, col3, col4 = st.columns([2, 1.5, 1, 2])
-            col1.markdown(f"<div class='checklist-row'>{label}</div>", unsafe_allow_html=True)
-            col2.markdown(f"<div class='checklist-row'>{value if value is not None else '—'}</div>", unsafe_allow_html=True)
-            if passed is True:
-                col3.success("✅")
-                score += 1
-            elif passed is False:
-                col3.error("❌")
-            else:
-                col3.warning("⚠️")
-            if trend is not None and isinstance(trend, pd.Series):
-                col4.line_chart(trend)
-            else:
-                col4.write("—")
+        for label, value, passed in results:
+            col1, col2, col3 = st.columns([3, 2, 1])
+            col1.write(label)
+            col2.write(value if value is not None else "—")
+            if passed is True: col3.success("✅")
+            elif passed is False: col3.error("❌")
+            else: col3.warning("⚠️")
 
         st.markdown(f"### Final Score: **{score}/{total}**")
-
-        if score >= 10:
-            st.success("🟢 Strong Candidate")
-        elif score >= 7:
-            st.warning("🟡 Watchlist")
-        else:
-            st.error("🔴 Avoid")
-
-        # --- Manual Review Reminders ---
-        st.markdown("---")
-        st.subheader("📌 Remember to Review Manually")
-        st.info("""
-        - Organized Labor
-        - Pricing Power
-        - Barriers to Entry
-        """)
-
-    except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        if score >= 10: st.success("🟢 Strong Candidate")
+        elif score >= 7: st.warning("🟡 Watchlist")
+        else: st.error("🔴 Avoid")
