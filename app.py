@@ -153,5 +153,9 @@ if ticker:
         st.markdown("---")
         st.subheader("📌 Manual Review Required")
         st.info(
-            "- 🧱 **Barriers to Entry** (brand, IP, network, cost
+    "- 🧱 **Barriers to Entry** (brand, IP, network, cost moat)\n"
+    "- 🏭 **Organized Labor Exposure**\n"
+    "- 📈 **Pricing Power / Inflation Pass-through**"
+)
+
 ::contentReference[oaicite:0]{index=0}
