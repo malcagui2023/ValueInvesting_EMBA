@@ -38,12 +38,12 @@ if ticker:
         results.append(("Return on Assets > 12%", roa, roa and roa > 0.12))
 
         # 3. EPS Trend Positive
-        eps_hist = stock.earnings
-        if not eps_hist.empty and "Earnings" in eps_hist:
-            eps_growth = eps_hist["Earnings"].pct_change().mean()
-            results.append(("EPS Trend Positive", eps_growth, eps_growth and eps_growth > 0))
-        else:
-            results.append(("EPS Trend Positive", None, None))
+eps_hist = stock.earnings
+if eps_hist is not None and not eps_hist.empty and "Earnings" in eps_hist:
+    eps_growth = eps_hist["Earnings"].pct_change().mean()
+    results.append(("EPS Trend Positive", eps_growth, eps_growth and eps_growth > 0))
+else:
+    results.append(("EPS Trend Positive", None, None))
 
         # 4. Net Margin > 20%
         net_margin = info.get("netMargins", None)
