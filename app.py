@@ -20,19 +20,20 @@ def get_cached_data(ticker, period):
     fin = stock.financials if stock.financials is not None else pd.DataFrame()
     bal = stock.balance_sheet if stock.balance_sheet is not None else pd.DataFrame()
     cf = stock.cashflow if stock.cashflow is not None else pd.DataFrame()
-    earnings = stock.earnings
-    dividends = stock.dividends
+    earnings = stock.earnings if stock.earnings is not None else pd.DataFrame()
+    dividends = stock.dividends if stock.dividends is not None else pd.Series(dtype="float64")
     return info, hist, fin, bal, cf, earnings, dividends
 
 def safe_ratio(a, b):
     try:
         return round(a / b, 2) if b else None
-    except: return None
+    except:
+        return None
 
 if ticker:
     try:
         info, hist, fin, bal, cf, earnings, dividends = get_cached_data(ticker, period)
-        stock = yf.Ticker(ticker)  # Safe to use outside cache
+        stock = yf.Ticker(ticker)  # Used only outside cache
 
         st.subheader("📈 Price History")
         fig, ax = plt.subplots(figsize=(10, 3))
@@ -50,42 +51,42 @@ if ticker:
 
         # 1. ROE
         roe = info.get("returnOnEquity", None)
-        results.append(("Return on Equity > 12%", roe, roe and roe > 0.12))
+        results.append(("Return on Equity > 12%", roe, roe is not None and roe > 0.12))
 
         # 2. ROA
         roa = info.get("returnOnAssets", None)
-        results.append(("Return on Assets > 12%", roa, roa and roa > 0.12))
+        results.append(("Return on Assets > 12%", roa, roa is not None and roa > 0.12))
 
         # 3. EPS Trend
-        if not earnings.empty:
+        if earnings is not None and not earnings.empty:
             eps_growth = earnings["Earnings"].pct_change().mean()
-            results.append(("EPS Trend Positive", eps_growth, eps_growth and eps_growth > 0))
+            results.append(("EPS Trend Positive", eps_growth, eps_growth is not None and eps_growth > 0))
             trends["EPS"] = earnings["Earnings"]
         else:
             results.append(("EPS Trend Positive", None, None))
 
         # 4. Net Margin
         net_margin = info.get("netMargins", None)
-        results.append(("Net Margin > 20%", net_margin, net_margin and net_margin > 0.20))
+        results.append(("Net Margin > 20%", net_margin, net_margin is not None and net_margin > 0.20))
 
         # 5. Gross Margin
         gross_margin = info.get("grossMargins", None)
-        results.append(("Gross Margin > 40%", gross_margin, gross_margin and gross_margin > 0.40))
+        results.append(("Gross Margin > 40%", gross_margin, gross_margin is not None and gross_margin > 0.40))
 
         # 6. LT Debt to Net Income
         try:
             debt = bal.loc["Long Term Debt"].iloc[0] if not bal.empty else None
             net_income = fin.loc["Net Income"].iloc[0] if not fin.empty else None
             ratio = safe_ratio(debt, net_income)
-            results.append(("LT Debt < 5x Net Income", ratio, ratio and ratio < 5))
+            results.append(("LT Debt < 5x Net Income", ratio, ratio is not None and ratio < 5))
         except:
             results.append(("LT Debt < 5x Net Income", None, None))
 
         # 7. Return on Retained Capital (placeholder)
         results.append(("Return on Retained Capital > 18%", "⚠️", None))
 
-        # 8. Dividends
-        if dividends.empty:
+        # 8. Dividend History
+        if dividends is None or dividends.empty:
             results.append(("Dividend History", "No Dividends", True))
         else:
             years = dividends.index.year.unique().tolist()
