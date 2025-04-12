@@ -11,8 +11,9 @@ st.title("📊 Value Investing Checklist")
 ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
 period = st.selectbox("Select time range", ["10y", "5y"], index=0)
 
+# Fix: Don't return yf.Ticker directly from cache
 @st.cache_data
-def get_data(ticker, period):
+def get_cached_data(ticker, period):
     stock = yf.Ticker(ticker)
     info = stock.info or {}
     hist = stock.history(period=period)
@@ -21,7 +22,7 @@ def get_data(ticker, period):
     cf = stock.cashflow if stock.cashflow is not None else pd.DataFrame()
     earnings = stock.earnings
     dividends = stock.dividends
-    return stock, info, hist, fin, bal, cf, earnings, dividends
+    return info, hist, fin, bal, cf, earnings, dividends
 
 def safe_ratio(a, b):
     try:
@@ -30,7 +31,8 @@ def safe_ratio(a, b):
 
 if ticker:
     try:
-        stock, info, hist, fin, bal, cf, earnings, dividends = get_data(ticker, period)
+        info, hist, fin, bal, cf, earnings, dividends = get_cached_data(ticker, period)
+        stock = yf.Ticker(ticker)  # Safe to use outside cache
 
         st.subheader("📈 Price History")
         fig, ax = plt.subplots(figsize=(10, 3))
@@ -46,15 +48,15 @@ if ticker:
         results = []
         trends = {}
 
-        # --- 1. ROE ---
+        # 1. ROE
         roe = info.get("returnOnEquity", None)
         results.append(("Return on Equity > 12%", roe, roe and roe > 0.12))
 
-        # --- 2. ROA ---
+        # 2. ROA
         roa = info.get("returnOnAssets", None)
         results.append(("Return on Assets > 12%", roa, roa and roa > 0.12))
 
-        # --- 3. EPS Growth ---
+        # 3. EPS Trend
         if not earnings.empty:
             eps_growth = earnings["Earnings"].pct_change().mean()
             results.append(("EPS Trend Positive", eps_growth, eps_growth and eps_growth > 0))
@@ -62,15 +64,15 @@ if ticker:
         else:
             results.append(("EPS Trend Positive", None, None))
 
-        # --- 4. Net Margin ---
+        # 4. Net Margin
         net_margin = info.get("netMargins", None)
         results.append(("Net Margin > 20%", net_margin, net_margin and net_margin > 0.20))
 
-        # --- 5. Gross Margin ---
+        # 5. Gross Margin
         gross_margin = info.get("grossMargins", None)
         results.append(("Gross Margin > 40%", gross_margin, gross_margin and gross_margin > 0.40))
 
-        # --- 6. LT Debt to Net Earnings ---
+        # 6. LT Debt to Net Income
         try:
             debt = bal.loc["Long Term Debt"].iloc[0] if not bal.empty else None
             net_income = fin.loc["Net Income"].iloc[0] if not fin.empty else None
@@ -79,10 +81,10 @@ if ticker:
         except:
             results.append(("LT Debt < 5x Net Income", None, None))
 
-        # --- 7. Return on Retained Capital (Manual Placeholder) ---
+        # 7. Return on Retained Capital (placeholder)
         results.append(("Return on Retained Capital > 18%", "⚠️", None))
 
-        # --- 8. Dividend History ---
+        # 8. Dividends
         if dividends.empty:
             results.append(("Dividend History", "No Dividends", True))
         else:
@@ -93,9 +95,10 @@ if ticker:
             results.append(("Dividend History", f"{len(years)} years | {cut_text}", cuts == 0))
             trends["Dividends"] = dividends
 
-        # --- Score & Display ---
+        # Final Score
         score = sum(1 for _, _, passed in results if passed)
         total = len(results)
+
         for label, value, passed in results:
             col1, col2, col3 = st.columns([3, 2, 1])
             col1.write(label)
@@ -109,7 +112,7 @@ if ticker:
         elif score >= 7: st.warning("🟡 Watchlist")
         else: st.error("🔴 Avoid")
 
-        # --- Trend Charts ---
+        # Trend Charts
         if trends:
             st.markdown("---")
             st.subheader("📊 Trends Over Time")
@@ -117,7 +120,7 @@ if ticker:
                 if not series.empty:
                     st.line_chart(series, use_container_width=True)
 
-        # --- Manual Review Reminder ---
+        # Manual Review Section
         st.markdown("---")
         st.subheader("📌 Manual Review Required")
         st.info(
@@ -126,7 +129,7 @@ if ticker:
             "- 📈 **Pricing Power / Inflation Pass-through**"
         )
 
-        # --- Download as CSV ---
+        # Download CSV
         st.markdown("---")
         st.subheader("📥 Download Results")
         csv_data = pd.DataFrame(results, columns=["Checklist Item", "Value", "Passed"])
