@@ -12,12 +12,11 @@ ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
 if ticker:
     try:
         stock = yf.Ticker(ticker)
-        info = stock.info
+        info = stock.info or {}
         hist = stock.history(period="10y")
-        financials = stock.financials
-        balance = stock.balance_sheet
-        cashflow = stock.cashflow
-        st.success(f"Data loaded for {info.get('shortName', ticker)}")
+        financials = stock.financials or pd.DataFrame()
+        balance = stock.balance_sheet or pd.DataFrame()
+        cashflow = stock.cashflow or pd.DataFrame()
 
         # Display price chart
         st.line_chart(hist["Close"])
