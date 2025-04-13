@@ -4,6 +4,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 
+# Apply dark grid style to charts
+plt.style.use("seaborn-darkgrid")
+
 st.set_page_config(page_title="Value Investing Checklist", layout="wide")
 st.title("📊 Value Investing Checklist (Year-by-Year)")
 
@@ -47,10 +50,11 @@ if ticker:
 
         st.subheader("📈 Price History")
         fig, ax = plt.subplots(figsize=(10, 3))
-        hist["Close"].resample("M").last().plot(ax=ax)
-        ax.set_title(f"{ticker} Monthly Closing Prices")
+        hist["Close"].resample("M").last().plot(ax=ax, color="orange")
+        ax.set_facecolor("#f2f2f2")
+        ax.set_title(f"{ticker} Monthly Closing Prices", fontsize=14)
         ax.set_ylabel("Price (USD)")
-        ax.grid(True)
+        ax.grid(True, linestyle="--", linewidth=0.5)
         st.pyplot(fig)
 
         st.markdown("---")
@@ -116,7 +120,6 @@ if ticker:
         else:
             results.append(("EPS Trend Upward", None))
 
-        # Summary Table
         st.markdown("#### 🔍 Checklist Summary")
         for label, passed in results:
             col1, col2 = st.columns([4, 1])
@@ -128,7 +131,6 @@ if ticker:
             else:
                 col2.warning("⚠️")
 
-        # Final Score
         score = sum(1 for _, p in results if p is True)
         total = len(results)
         st.markdown(f"### 🎯 Final Score: **{score}/{total}**")
@@ -139,16 +141,25 @@ if ticker:
         else:
             st.error("🔴 Avoid")
 
-        # Breakdown
         st.markdown("---")
         st.subheader("📊 Year-by-Year Breakdown")
+
         for metric, data in trend_tables.items():
             st.markdown(f"**{metric}**")
             df = pd.DataFrame(data, columns=["Year", "Value", "Passed"])
             df["Year"] = df["Year"].astype(int)
             df.set_index("Year", inplace=True)
 
-            st.line_chart(df["Value"])
+            # Custom matplotlib chart
+            fig, ax = plt.subplots(figsize=(8, 3))
+            df["Value"].plot(ax=ax, color="tab:blue", marker='o')
+            ax.set_facecolor("#f2f2f2")
+            ax.set_title(f"{metric} Over Time", fontsize=12)
+            ax.set_ylabel(metric)
+            ax.set_xlabel("Year")
+            ax.grid(True, linestyle="--", linewidth=0.5)
+            st.pyplot(fig)
+
             st.dataframe(
                 df.style.applymap(
                     lambda v: "background-color: #d4edda" if v is True else ("background-color: #f8d7da" if v is False else ""),
