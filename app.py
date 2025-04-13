@@ -116,10 +116,11 @@ if ticker:
         else:
             results.append(("EPS Trend Upward", None))
 
-        # Show checklist summary
+        # Summary Table
+        st.markdown("#### 🔍 Checklist Summary")
         for label, passed in results:
             col1, col2 = st.columns([4, 1])
-            col1.write(label)
+            col1.write(f"**{label}**")
             if passed is True:
                 col2.success("✅")
             elif passed is False:
@@ -127,10 +128,10 @@ if ticker:
             else:
                 col2.warning("⚠️")
 
-        # Final score
+        # Final Score
         score = sum(1 for _, p in results if p is True)
         total = len(results)
-        st.markdown(f"### Final Score: **{score}/{total}**")
+        st.markdown(f"### 🎯 Final Score: **{score}/{total}**")
         if score >= 4:
             st.success("🟢 Strong Candidate")
         elif score >= 2:
@@ -138,18 +139,25 @@ if ticker:
         else:
             st.error("🔴 Avoid")
 
-        # Show breakdown
+        # Breakdown
         st.markdown("---")
         st.subheader("📊 Year-by-Year Breakdown")
         for metric, data in trend_tables.items():
             st.markdown(f"**{metric}**")
-            df = pd.DataFrame(data, columns=["Year", "Value", "Passed"]).set_index("Year")
-            st.line_chart(df["Value"])
-            st.dataframe(df.style.applymap(
-                lambda v: "background-color: #d4edda" if v is True else ("background-color: #f8d7da" if v is False else ""),
-                subset=["Passed"]))
+            df = pd.DataFrame(data, columns=["Year", "Value", "Passed"])
+            df["Year"] = df["Year"].astype(int)
+            df.set_index("Year", inplace=True)
 
-        # Manual review section
+            st.line_chart(df["Value"])
+            st.dataframe(
+                df.style.applymap(
+                    lambda v: "background-color: #d4edda" if v is True else ("background-color: #f8d7da" if v is False else ""),
+                    subset=["Passed"]
+                ),
+                use_container_width=True
+            )
+
+        # Manual Review
         st.markdown("---")
         st.subheader("📌 Manual Review Required")
         st.info(
@@ -158,7 +166,7 @@ if ticker:
             "- 📈 Pricing Power / Inflation Pass-through"
         )
 
-        # Download
+        # Download Summary
         st.markdown("---")
         st.subheader("📥 Download Summary")
         summary_df = pd.DataFrame(results, columns=["Checklist Item", "Passed"])
