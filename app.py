@@ -178,4 +178,10 @@ if ticker:
         # Download CSV
         st.markdown("---")
         st.subheader("📥 Download Summary")
-        summary_df = pd.DataFrame(results, columns
+        summary_df = pd.DataFrame(results, columns=["Checklist Item", "Passed"])
+        buffer = BytesIO()
+        summary_df.to_csv(buffer, index=False)
+        st.download_button("Download Checklist as CSV", buffer.getvalue(), file_name=f"{ticker}_checklist_summary.csv", mime="text/csv")
+
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
