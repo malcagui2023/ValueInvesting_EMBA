@@ -1,4 +1,3 @@
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -170,21 +169,13 @@ if ticker:
         # Manual Review
         st.markdown("---")
         st.subheader("📌 Manual Review Required")
-        st.info(
-            "- 🧱 Barriers to Entry (brand, IP, network, cost moat)
-"
-            "- 🏭 Organized Labor Exposure
-"
-            "- 📈 Pricing Power / Inflation Pass-through"
-        )
+        st.info(\"\"\"\
+- 🧱 Barriers to Entry (brand, IP, network, cost moat)
+- 🏭 Organized Labor Exposure
+- 📈 Pricing Power / Inflation Pass-through
+\"\"\")
 
         # Download CSV
         st.markdown("---")
         st.subheader("📥 Download Summary")
-        summary_df = pd.DataFrame(results, columns=["Checklist Item", "Passed"])
-        buffer = BytesIO()
-        summary_df.to_csv(buffer, index=False)
-        st.download_button("Download Checklist as CSV", buffer.getvalue(), file_name=f"{ticker}_checklist_summary.csv", mime="text/csv")
-
-    except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        summary_df = pd.DataFrame(results, columns
