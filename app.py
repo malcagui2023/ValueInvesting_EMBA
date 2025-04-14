@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 import datetime
 
-# ----------------------------
-# Chart Theme (Dark Matplotlib)
-# ----------------------------
+# ==========================================================
+# Chart Theme: Use only Matplotlib (dark theme)
+# ==========================================================
 plt.style.use("dark_background")
 plt.rcParams.update({
     "axes.facecolor": "#1e1e1e",
@@ -22,216 +22,311 @@ plt.rcParams.update({
     "legend.edgecolor": "white"
 })
 
+# ==========================================================
+# Page configuration
+# ==========================================================
 st.set_page_config(page_title="Value Investing Checklist", layout="wide")
 st.title("📊 Value Investing Checklist (Year-by-Year)")
 
-# ----------------------------
-# Inputs
-# ----------------------------
+# ==========================================================
+# Input: Ticker Symbol
+# ==========================================================
 ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
 
+# ==========================================================
+# Data loading and utility functions
+# ==========================================================
 @st.cache_data
 def get_data(ticker):
     stock = yf.Ticker(ticker)
     info = stock.info
-    bs = stock.balance_sheet or pd.DataFrame()
-    fin = stock.financials or pd.DataFrame()
-    earnings = stock.earnings or pd.DataFrame()
+    bs = stock.balance_sheet if stock.balance_sheet is not None else pd.DataFrame()
+    fin = stock.financials if stock.financials is not None else pd.DataFrame()
+    # Use income statement from financials as earnings data is deprecated.
+    # For EPS, we will calculate using Net Income / sharesOutstanding.
+    earnings = pd.DataFrame()  # Not used directly now
     hist = stock.history(period="10y")
-    div = stock.dividends or pd.Series(dtype="float64")
+    div = stock.dividends if stock.dividends is not None else pd.Series(dtype="float64")
     return info, bs, fin, earnings, hist, div
 
 def safe_ratio(numerator, denominator):
     try:
-        return round(numerator / denominator, 4) if denominator else None
+        return numerator / denominator if denominator and denominator != 0 else None
     except:
         return None
 
 def get_recent_years(df, max_years=10):
     if df.empty:
         return []
-    years = sorted(set(df.columns.year if hasattr(df.columns, 'year') else df.index.year))
+    # Try to extract fiscal year from columns (which are usually DatetimeIndex)
+    try:
+        years = sorted({col.year for col in df.columns})
+    except Exception:
+        years = sorted({idx.year for idx in df.index})
     return years[-max_years:]
 
 def format_percent(value):
-    return f"{value*100:.1f}%" if isinstance(value, (float, int)) else "Missing"
-    if ticker:
+    if value is None:
+        return "Missing"
+    try:
+        return f"{value*100:.1f}%"
+    except:
+        return str(value)
+
+# ==========================================================
+# Main Execution: Only run if ticker input exists
+# ==========================================================
+if ticker:
     try:
         info, bs, fin, earnings, hist, div = get_data(ticker)
         fiscal_years = get_recent_years(fin, 10)
-        fallback = " (fallback 5y)" if len(fiscal_years) < 10 else ""
+        # Fallback logic: if fewer than 10 fiscal years are available, use the last 5.
+        if len(fiscal_years) < 10:
+            fiscal_years = get_recent_years(fin, 5)
+        # ======================================================
+        # Top Section: Price Chart (Last 10 years)
+        # ======================================================
+        st.subheader("📈 Stock Price (Last 10 Years)")
+        fig_price, ax_price = plt.subplots(figsize=(10, 3))
+        # Use month-end frequency for resampling (to avoid deprecation warning)
+        hist["Close"].resample("ME").last().plot(ax=ax_price, color="orange")
+        ax_price.set_title(f"{ticker} Monthly Closing Prices")
+        ax_price.set_xlabel("Date")
+        ax_price.set_ylabel("Price (USD)")
+        ax_price.grid(True)
+        st.pyplot(fig_price)
+        
+        # ======================================================
+        # Initialize containers for summary and chart data
+        # ======================================================
+        summary = []  # List of tuples: (Metric, Pass/Fail, Value or # failures)
+        metric_data = {}  # Dictionary: metric name -> {year: value} (year-by-year)
 
-        # ----------------------------
-        # Summary Table Container
-        # ----------------------------
-        summary = []
-        metric_data = {}
-
-        def evaluate_metric(name, values, threshold=None, compare=">", is_percent=True):
-            passed = 0
+        # Helper: Evaluate a metric over each fiscal year.
+        def evaluate_metric(metric_name, values_dict, threshold=None, comparison=">", is_percent=True):
+            # values_dict: {year: value}, where value can be None.
+            fails = 0
             data = {}
             for y in fiscal_years:
-                v = values.get(y)
+                v = values_dict.get(y, None)
                 if v is None:
                     data[y] = "Missing"
                 else:
-                    if is_percent:
-                        v *= 100
-                    if (compare == ">" and v >= threshold * 100) or (compare == "<" and v <= threshold * 100):
-                        passed += 1
-                    data[y] = round(v, 2)
-            metric_data[name] = data
-            pass_fail = "✅" if passed == len(fiscal_years) else "❌"
-            summary.append((name, pass_fail, f"{passed} / {len(fiscal_years)} years passed"))
+                    # Convert to percent if needed:
+                    pv = v * 100 if is_percent else v
+                    data[y] = round(pv, 2)
+                    if threshold is not None:
+                        # Compare against threshold in percent.
+                        if comparison == ">" and pv < threshold * 100:
+                            fails += 1
+                        elif comparison == "<" and pv > threshold * 100:
+                            fails += 1
+            metric_data[metric_name] = data
+            pass_fail = "✅" if fails == 0 else "❌"
+            summary.append((metric_name, pass_fail, f"{len(fiscal_years)-fails} / {len(fiscal_years)} years passed"))
 
-        # ----------------------------
-        # ROE
-        # ----------------------------
+        # ======================================================
+        # Metric 1: ROE ≥ 12%
+        # ======================================================
         roe_vals = {}
         for y in fiscal_years:
             try:
                 net = fin.loc["Net Income", fin.columns[fin.columns.year == y]].values[0]
-                eq = bs.loc["Total Stockholder Equity", bs.columns[bs.columns.year == y]].values[0]
-                roe_vals[y] = safe_ratio(net, eq)
-            except: roe_vals[y] = None
+                equity = bs.loc["Total Stockholder Equity", bs.columns[bs.columns.year == y]].values[0]
+                roe_vals[y] = safe_ratio(net, equity)
+            except:
+                roe_vals[y] = None
         evaluate_metric("ROE ≥ 12%", roe_vals, threshold=0.12)
 
-        # ROA
+        # ======================================================
+        # Metric 2: ROA ≥ 12%
+        # ======================================================
         roa_vals = {}
         for y in fiscal_years:
             try:
                 net = fin.loc["Net Income", fin.columns[fin.columns.year == y]].values[0]
                 assets = bs.loc["Total Assets", bs.columns[bs.columns.year == y]].values[0]
                 roa_vals[y] = safe_ratio(net, assets)
-            except: roa_vals[y] = None
+            except:
+                roa_vals[y] = None
         evaluate_metric("ROA ≥ 12%", roa_vals, threshold=0.12)
 
-        # EPS
+        # ======================================================
+        # Metric 3: Historical EPS Per Share
+        # For EPS, we calculate using: Net Income / Shares Outstanding
+        # (sharesOutstanding is taken from info; assume constant over period)
+        # ======================================================
         eps_vals = {}
-        if not earnings.empty:
-            for y in fiscal_years:
-                eps_vals[y] = earnings.loc[y]["Earnings"] if y in earnings.index else None
-        metric_data["EPS"] = eps_vals
-        summary.append(("EPS Per Share", "—", f"{len([v for v in eps_vals.values() if v is not None])} available"))
+        shares = info.get("sharesOutstanding", None)
+        for y in fiscal_years:
+            try:
+                net = fin.loc["Net Income", fin.columns[fin.columns.year == y]].values[0]
+                if shares:
+                    eps_vals[y] = safe_ratio(net, shares)
+                else:
+                    eps_vals[y] = None
+            except:
+                eps_vals[y] = None
+        # Here no threshold is applied; we simply display the EPS series.
+        metric_data["EPS Per Share"] = {y: (round(v*100, 2) if v is not None else "Missing") for y, v in eps_vals.items()}
+        available_eps = sum(1 for v in eps_vals.values() if v is not None)
+        summary.append(("EPS Per Share", "—", f"{available_eps} / {len(fiscal_years)} years available"))
 
-        # Net Margin
+        # ======================================================
+        # Metric 4: Net Margin ≥ 20% (Net Income ÷ Total Revenue)
+        # ======================================================
         net_margin_vals = {}
         for y in fiscal_years:
             try:
                 net = fin.loc["Net Income", fin.columns[fin.columns.year == y]].values[0]
                 rev = fin.loc["Total Revenue", fin.columns[fin.columns.year == y]].values[0]
                 net_margin_vals[y] = safe_ratio(net, rev)
-            except: net_margin_vals[y] = None
+            except:
+                net_margin_vals[y] = None
         evaluate_metric("Net Margin ≥ 20%", net_margin_vals, threshold=0.20)
 
-        # Gross Margin
+        # ======================================================
+        # Metric 5: Gross Margin ≥ 40% (Gross Profit ÷ Total Revenue)
+        # ======================================================
         gross_margin_vals = {}
         for y in fiscal_years:
             try:
                 gross = fin.loc["Gross Profit", fin.columns[fin.columns.year == y]].values[0]
                 rev = fin.loc["Total Revenue", fin.columns[fin.columns.year == y]].values[0]
                 gross_margin_vals[y] = safe_ratio(gross, rev)
-            except: gross_margin_vals[y] = None
+            except:
+                gross_margin_vals[y] = None
         evaluate_metric("Gross Margin ≥ 40%", gross_margin_vals, threshold=0.40)
 
-        # RORC
+        # ======================================================
+        # Metric 6: Return on Retained Capital (RORC) ≥ 18%
+        # Approximation: Net Income ÷ (Net Income - Dividends)
+        # ======================================================
         rorc_vals = {}
         for y in fiscal_years:
             try:
                 net = fin.loc["Net Income", fin.columns[fin.columns.year == y]].values[0]
-                divs = div[div.index.year == y].sum()
-                retained = net - divs
+                year_divs = div[div.index.year == y].sum()
+                retained = net - year_divs
                 rorc_vals[y] = safe_ratio(net, retained)
-            except: rorc_vals[y] = None
+            except:
+                rorc_vals[y] = None
         evaluate_metric("Return on Retained Capital ≥ 18%", rorc_vals, threshold=0.18)
 
-        # LT Debt ÷ Net Income
+        # ======================================================
+        # Metrics without charts – only value + commentary
+        # Metric 7: LT Debt ÷ Net Income < 5x (latest fiscal year)
+        # ======================================================
         try:
-            latest_y = fiscal_years[-1]
-            debt = bs.loc["Long Term Debt", bs.columns[bs.columns.year == latest_y]].values[0]
-            net = fin.loc["Net Income", fin.columns[fin.columns.year == latest_y]].values[0]
-            ratio = safe_ratio(debt, net)
+            latest_year = fiscal_years[-1]
+            debt = bs.loc["Long Term Debt", bs.columns[bs.columns.year == latest_year]].values[0]
+            net_latest = fin.loc["Net Income", fin.columns[fin.columns.year == latest_year]].values[0]
+            ratio = safe_ratio(debt, net_latest)
             lt_comment = f"{ratio:.2f}x" if ratio is not None else "Missing"
-            summary.append(("LT Debt ÷ Net Income < 5x", "✅" if ratio < 5 else "❌", lt_comment))
+            summary.append(("LT Debt ÷ Net Income < 5x", "✅" if ratio is not None and ratio < 5 else "❌", lt_comment))
         except:
             summary.append(("LT Debt ÷ Net Income < 5x", "⚠️", "Missing"))
 
-        # Dividends & Buybacks
-        years_available = sorted(set(div.index.year))
-        cuts = []
-        if len(years_available) > 1:
-            for i in range(1, len(years_available)):
-                if div[div.index.year == years_available[i]].sum() < div[div.index.year == years_available[i - 1]].sum():
-                    cuts.append(years_available[i])
-        summary.append(("Dividends & Buybacks", "✅" if not cuts else "❌", f"{len(years_available)} years | Cuts: {cuts or 'None'}"))
-        # ----------------------------
-        # Display Summary Table
-        # ----------------------------
+        # Metric 8: Pricing Power vs. Inflation (Commentary)
+        # For this demo, we assume a static latest US CPI value.
+        cpi = 0.032  # 3.2%
+        pricing_comment = f"Compare company's pricing adjustments to a US CPI of ~{cpi*100:.1f}%. [Source: U.S. Bureau of Labor Statistics]"
+        summary.append(("Pricing Power vs. Inflation", "—", pricing_comment))
+
+        # Metric 9: Organized Labor (Commentary)
+        labor_comment = ("Review recent SEC 10-K and news on labor relations, union contracts, and strike risks. "
+                         "[Example Source: Reuters, 2023]")
+        summary.append(("Organized Labor", "—", labor_comment))
+
+        # Metric 11: Dividends & Buybacks (Commentary)
+        years_div = sorted(set(div.index.year)) if not div.empty else []
+        if not years_div:
+            div_comment = "No Dividends or Buybacks"
+            div_pass = "—"
+        else:
+            cuts = []
+            for i in range(1, len(years_div)):
+                try:
+                    sum_current = div[div.index.year == years_div[i]].sum()
+                    sum_previous = div[div.index.year == years_div[i-1]].sum()
+                    if sum_current < sum_previous:
+                        cuts.append(years_div[i])
+                except:
+                    pass
+            div_comment = f"{len(years_div)} years; Dividend cuts in: {cuts if cuts else 'None'}"
+            div_pass = "✅" if not cuts else "❌"
+        summary.append(("Dividends & Buybacks", div_pass, div_comment))
+
+        # Metric 12: Barriers to Entry (Commentary)
+        barriers_comment = ("- Strong brand loyalty and ecosystem integration [Source: Morningstar]\n"
+                            "- Patents and technological advantages [Source: SEC 10-K]\n"
+                            "- Cost advantages through scale [Source: HBR]\n"
+                            "- Distribution network lock-in [Source: WSJ]")
+        summary.append(("Barriers to Entry", "—", barriers_comment))
+
+        # ======================================================
+        # Top Section: Display Summary Table
+        # ======================================================
         st.subheader("📋 Summary Table")
-        st.table(pd.DataFrame(summary, columns=["Metric", "Pass/Fail", "Value/Details"]))
+        df_summary = pd.DataFrame(summary, columns=["Metric", "Pass/Fail", "Value/Details"])
+        st.table(df_summary)
 
-        # ----------------------------
-        # Chart Section in Tabs
-        # ----------------------------
-        st.subheader("📊 Metric Charts & Tables (Last 10 Years)")
-        for name, data in metric_data.items():
-            with st.container():
-                with st.expander(f"{name} Trend", expanded=False):
-                    tab1, tab2 = st.tabs(["Chart", "Table"])
-                    # Prepare values
-                    years = list(data.keys())
-                    values = [data[y] if isinstance(data[y], (int, float)) else None for y in years]
+        # ======================================================
+        # Middle Section: Charts + Tables for metrics with charts
+        # We'll wrap each metric's chart & table pair in st.tabs() for clarity.
+        st.subheader("📊 Metrics (Year-by-Year Charts & Tables)")
+        for metric, data in metric_data.items():
+            with st.expander(f"{metric} Trend", expanded=False):
+                tab_chart, tab_table = st.tabs(["Chart", "Table"])
+                # Prepare DataFrame for charting and table display:
+                df_metric = pd.DataFrame.from_dict(data, orient="index", columns=["Value"])
+                df_metric.index = df_metric.index.map(lambda y: int(y))
+                # Replace None values with NaN for plotting
+                df_metric["Value"] = df_metric["Value"].apply(lambda x: x if isinstance(x, (int, float)) else None)
+                # Plot the chart using matplotlib:
+                fig, ax = plt.subplots(figsize=(8, 3))
+                ax.plot(df_metric.index, df_metric["Value"], marker="o", color="tab:blue")
+                ax.set_title(metric)
+                ax.set_xlabel("Fiscal Year")
+                ax.set_ylabel("Percentage" if any(metric in m for m in ["ROE", "ROA", "Net Margin", "Gross Margin", "Return on Retained Capital"]) else "Value")
+                ax.set_xticks(df_metric.index)
+                ax.grid(True, linestyle="--", linewidth=0.5)
+                st.pyplot(fig, clear_figure=True)
+                # Display the table:
+                df_display = df_metric.copy()
+                df_display["Value"] = df_display["Value"].apply(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) else "Missing")
+                tab_table.dataframe(df_display)
 
-                    # Plot
-                    fig, ax = plt.subplots(figsize=(8, 3))
-                    ax.plot(years, values, marker="o", color="tab:blue")
-                    ax.set_title(f"{name}")
-                    ax.set_xlabel("Year")
-                    ax.set_ylabel("Value")
-                    ax.set_xticks(years)
-                    ax.grid(True)
-                    st.pyplot(fig)
-
-                    # Table
-                    df = pd.DataFrame({
-                        "Year": years,
-                        "Value": [format_percent(v/100) if isinstance(v, (float, int)) and 'Margin' in name else v if v is not None else "Missing" for v in values]
-                    }).set_index("Year")
-                    tab2.dataframe(df)
-
-        # ----------------------------
-        # Bottom Section – Commentary
-        # ----------------------------
+        # ======================================================
+        # Bottom Section: Narrative Insights & Commentary (non-quantitative)
         st.subheader("🧠 Narrative Insights & Commentary")
-
         st.markdown("### 🏛️ Barriers to Entry")
         st.markdown("""
-- Strong customer lock-in via ecosystem integration (Apple) [Source: Morningstar]
-- Patents and proprietary tech reduce substitutes [Source: SEC 10-K]
-- Cost advantages via scale or access [Source: HBR]
-- Global supply chain control limits new entrants [Source: WSJ]
+- Strong brand loyalty and ecosystem integration [Source: Morningstar]
+- Patents and technological advantages [Source: SEC 10-K]
+- Cost advantages through scale [Source: HBR]
+- Distribution network lock-in [Source: WSJ]
         """)
-
         st.markdown("### 📉 Pricing Power vs. Inflation")
-        st.markdown("""
-As of July 2024, US CPI YoY stands at 3.2% [Source: U.S. Bureau of Labor Statistics].
-Compare company price hikes in earnings reports to inflation. If the company raises prices ≥ CPI without losing volume, it's a ✅.
+        st.markdown(f"""
+As of July 2024, U.S. CPI YoY is approximately {cpi*100:.1f}%. Compare the company's reported pricing strategies in earnings calls to this benchmark. [Source: U.S. Bureau of Labor Statistics]
         """)
-
-        st.markdown("### 🏭 Organized Labor Exposure")
+        st.markdown("### 🏭 Organized Labor")
         st.markdown("""
-Check the company’s 10-K or recent news. Are there any union contracts, strike risks, or settlements?
-[Example Source: Reuters, 2023 - Amazon labor action in NY]
+Review SEC 10-K filings and recent news for any union contracts, strike risks, or labor disputes. [Example Source: Reuters, 2023]
         """)
+        st.markdown("### LT Debt ÷ Net Income")
+        st.markdown("Refer to the summary table above for the latest LT Debt ÷ Net Income value and commentary.")
+        st.markdown("### Dividends & Buybacks")
+        st.markdown("Review the summary table for dividend history and any indication of dividend/repurchase cuts.")
 
-        # ----------------------------
-        # Download Export
-        # ----------------------------
+        # ======================================================
+        # Export Section: Download Summary and (optionally) chart images
         st.subheader("📥 Export Results")
-        df_summary = pd.DataFrame(summary, columns=["Metric", "Pass/Fail", "Value/Details"])
-        csv = df_summary.to_csv(index=False).encode("utf-8")
-        st.download_button("📤 Download Summary CSV", csv, file_name=f"{ticker}_summary.csv", mime="text/csv")
-
+        csv_data = df_summary.to_csv(index=False).encode("utf-8")
+        st.download_button("📤 Download Summary CSV", csv_data, file_name=f"{ticker}_summary.csv", mime="text/csv")
+        
+        # Optional: You might add additional export functionality for charts as PNGs.
+        
     except Exception as e:
         st.error(f"Error processing ticker: {e}")
-
