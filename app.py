@@ -12,7 +12,7 @@ ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
 period = st.selectbox("Select analysis period", ["10y", "5y"], index=0)
 period_years = 10 if period == "10y" else 5
 
-@st.cache_data
+@st.cache_resource
 def get_data(ticker):
     stock = yf.Ticker(ticker)
     info = stock.info or {}
@@ -169,11 +169,11 @@ if ticker:
         # Manual Review
         st.markdown("---")
         st.subheader("📌 Manual Review Required")
-        st.info(\"\"\"\
+        st.info("""\
 - 🧱 Barriers to Entry (brand, IP, network, cost moat)
 - 🏭 Organized Labor Exposure
 - 📈 Pricing Power / Inflation Pass-through
-\"\"\")
+""")
 
         # Download CSV
         st.markdown("---")
