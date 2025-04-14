@@ -4,8 +4,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 
-# Apply dark grid style to charts
-plt.style.use("seaborn-darkgrid")
+# Global chart style
+plt.style.use("seaborn-v0_8-darkgrid")
+plt.rcParams.update({
+    "axes.facecolor": "#f4f4f4",
+    "figure.facecolor": "#f4f4f4",
+    "axes.edgecolor": "gray",
+    "axes.labelcolor": "black",
+    "xtick.color": "black",
+    "ytick.color": "black",
+    "text.color": "black",
+    "grid.color": "white",
+    "grid.linestyle": "--"
+})
 
 st.set_page_config(page_title="Value Investing Checklist", layout="wide")
 st.title("📊 Value Investing Checklist (Year-by-Year)")
@@ -43,7 +54,6 @@ def safe_ratio(numerator, denominator):
         return numerator / denominator if denominator and denominator != 0 else None
     except:
         return None
-
 if ticker:
     try:
         info, bs, fin, earnings, hist, div = get_data(ticker)
@@ -51,10 +61,9 @@ if ticker:
         st.subheader("📈 Price History")
         fig, ax = plt.subplots(figsize=(10, 3))
         hist["Close"].resample("M").last().plot(ax=ax, color="orange")
-        ax.set_facecolor("#f2f2f2")
-        ax.set_title(f"{ticker} Monthly Closing Prices", fontsize=14)
+        ax.set_title(f"{ticker} Monthly Closing Prices")
         ax.set_ylabel("Price (USD)")
-        ax.grid(True, linestyle="--", linewidth=0.5)
+        ax.grid(True)
         st.pyplot(fig)
 
         st.markdown("---")
@@ -66,12 +75,12 @@ if ticker:
         available_years = list(fin.columns.year)
         selected_years = sorted(available_years)[-period_years:]
 
-        # ROE
+        # Metric: ROE
         roe_series = {}
         for year in selected_years:
             try:
-                net = fin[fin.columns[fin.columns.year == year]].loc["Net Income"].values[0]
-                equity = bs[bs.columns[bs.columns.year == year]].loc["Total Stockholder Equity"].values[0]
+                net = fin.loc["Net Income", fin.columns[fin.columns.year == year]].values[0]
+                equity = bs.loc["Total Stockholder Equity", bs.columns[bs.columns.year == year]].values[0]
                 roe_series[year] = safe_ratio(net, equity)
             except:
                 roe_series[year] = None
@@ -79,12 +88,12 @@ if ticker:
         results.append(("ROE > 12%", roe_pass))
         trend_tables["ROE"] = roe_check
 
-        # ROA
+        # Metric: ROA
         roa_series = {}
         for year in selected_years:
             try:
-                net = fin[fin.columns[fin.columns.year == year]].loc["Net Income"].values[0]
-                assets = bs[bs.columns[bs.columns.year == year]].loc["Total Assets"].values[0]
+                net = fin.loc["Net Income", fin.columns[fin.columns.year == year]].values[0]
+                assets = bs.loc["Total Assets", bs.columns[bs.columns.year == year]].values[0]
                 roa_series[year] = safe_ratio(net, assets)
             except:
                 roa_series[year] = None
@@ -92,20 +101,20 @@ if ticker:
         results.append(("ROA > 12%", roa_pass))
         trend_tables["ROA"] = roa_check
 
-        # Net Margin
+        # Metric: Net Margin
         net_margin_series = {}
         for year in selected_years:
             try:
-                revenue = fin[fin.columns[fin.columns.year == year]].loc["Total Revenue"].values[0]
-                net_income = fin[fin.columns[fin.columns.year == year]].loc["Net Income"].values[0]
-                net_margin_series[year] = safe_ratio(net_income, revenue)
+                net = fin.loc["Net Income", fin.columns[fin.columns.year == year]].values[0]
+                rev = fin.loc["Total Revenue", fin.columns[fin.columns.year == year]].values[0]
+                net_margin_series[year] = safe_ratio(net, rev)
             except:
                 net_margin_series[year] = None
         net_margin_check, net_margin_pass = check_all_years(net_margin_series, 0.20)
         results.append(("Net Margin > 20%", net_margin_pass))
         trend_tables["Net Margin"] = net_margin_check
 
-        # EPS
+        # Metric: EPS Trend
         eps_check = []
         eps_pass = None
         if earnings is not None and not earnings.empty:
@@ -120,6 +129,62 @@ if ticker:
         else:
             results.append(("EPS Trend Upward", None))
 
+        # Metric: Gross Margin
+        gross_margin_series = {}
+        for year in selected_years:
+            try:
+                gross_profit = fin.loc["Gross Profit", fin.columns[fin.columns.year == year]].values[0]
+                revenue = fin.loc["Total Revenue", fin.columns[fin.columns.year == year]].values[0]
+                gross_margin_series[year] = safe_ratio(gross_profit, revenue)
+            except:
+                gross_margin_series[year] = None
+        gm_check, gm_pass = check_all_years(gross_margin_series, 0.40)
+        results.append(("Gross Margin > 40%", gm_pass))
+        trend_tables["Gross Margin"] = gm_check
+
+        # Metric: Debt / Net Earnings
+        debt_series = {}
+        for year in selected_years:
+            try:
+                debt = bs.loc["Long Term Debt", bs.columns[bs.columns.year == year]].values[0]
+                net_income = fin.loc["Net Income", fin.columns[fin.columns.year == year]].values[0]
+                debt_series[year] = safe_ratio(debt, net_income)
+            except:
+                debt_series[year] = None
+        debt_check, debt_pass = check_all_years(debt_series, 5, comparison="<")
+        results.append(("LT Debt < 5x Net Income", debt_pass))
+        trend_tables["LT Debt / Net Income"] = debt_check
+
+        # Metric: Return on Retained Capital (approximate)
+        rorc_series = {}
+        for year in selected_years:
+            try:
+                net_income = fin.loc["Net Income", fin.columns[fin.columns.year == year]].values[0]
+                dividends = div[div.index.year == year].sum()
+                retained_earnings = net_income - dividends
+                rorc_series[year] = safe_ratio(net_income, retained_earnings)
+            except:
+                rorc_series[year] = None
+        rorc_check, rorc_pass = check_all_years(rorc_series, 0.18)
+        results.append(("Return on Retained Capital > 18%", rorc_pass))
+        trend_tables["Return on Retained Capital"] = rorc_check
+
+        # Dividends & Buybacks (Basic Check)
+        div_years = sorted(set(div.index.year))
+        cut_years = []
+        if len(div_years) > 1:
+            for i in range(1, len(div_years)):
+                if div[div.index.year == div_years[i]].max() < div[div.index.year == div_years[i - 1]].max():
+                    cut_years.append(div_years[i])
+        if len(div_years) == 0:
+            div_result = "No Dividends"
+            pass_div = None
+        else:
+            div_result = f"{len(div_years)} years | " + ("Cut(s): " + ", ".join(map(str, cut_years)) if cut_years else "No Cuts")
+            pass_div = len(cut_years) == 0
+        results.append((f"Dividends/Buybacks: {div_result}", pass_div))
+
+        # Checklist Summary
         st.markdown("#### 🔍 Checklist Summary")
         for label, passed in results:
             col1, col2 = st.columns([4, 1])
@@ -131,6 +196,7 @@ if ticker:
             else:
                 col2.warning("⚠️")
 
+        # Score
         score = sum(1 for _, p in results if p is True)
         total = len(results)
         st.markdown(f"### 🎯 Final Score: **{score}/{total}**")
@@ -141,21 +207,18 @@ if ticker:
         else:
             st.error("🔴 Avoid")
 
+        # Charts
         st.markdown("---")
         st.subheader("📊 Year-by-Year Breakdown")
-
         for metric, data in trend_tables.items():
             st.markdown(f"**{metric}**")
             df = pd.DataFrame(data, columns=["Year", "Value", "Passed"])
             df["Year"] = df["Year"].astype(int)
             df.set_index("Year", inplace=True)
 
-            # Custom matplotlib chart
             fig, ax = plt.subplots(figsize=(8, 3))
-            df["Value"].plot(ax=ax, color="tab:blue", marker='o')
-            ax.set_facecolor("#f2f2f2")
-            ax.set_title(f"{metric} Over Time", fontsize=12)
-            ax.set_ylabel(metric)
+            df["Value"].plot(ax=ax, color="tab:blue", marker="o")
+            ax.set_title(f"{metric}", fontsize=12)
             ax.set_xlabel("Year")
             ax.grid(True, linestyle="--", linewidth=0.5)
             st.pyplot(fig)
@@ -168,7 +231,7 @@ if ticker:
                 use_container_width=True
             )
 
-        # Manual Review
+        # Manual Items
         st.markdown("---")
         st.subheader("📌 Manual Review Required")
         st.info(
@@ -177,7 +240,7 @@ if ticker:
             "- 📈 Pricing Power / Inflation Pass-through"
         )
 
-        # Download Summary
+        # Download Button
         st.markdown("---")
         st.subheader("📥 Download Summary")
         summary_df = pd.DataFrame(results, columns=["Checklist Item", "Passed"])
