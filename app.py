@@ -6,29 +6,29 @@ import base64
 from io import BytesIO
 import datetime
 
-# Must be the very first st command:
+# MUST be the very first Streamlit command!
 st.set_page_config(page_title="Value Investing Checklist", layout="wide")
 
-# Now you can include your other code
+# ==========================================================
+# Top Section: Logo + Title using HTML with inline base64 image
+# ==========================================================
 def load_logo_base64(logo_path: str) -> str:
     with open(logo_path, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
-st.set_page_config(page_title="Value Investing Checklist", layout="wide")
-
 logo_data = load_logo_base64("SCM-Analytics Logo.jfif")
 top_html = f"""
 <div style="display:flex; align-items:center; margin-bottom:1rem;">
-    <img src="data:image/jpg;base64,{logo_data}" style="width:60px; margin-right:15px;" alt="SCM Analytics Logo"/>
-    <h1 style="margin:0; font-size:1.75rem;">Value Investing Checklist (Year-by-Year)</h1>
+    <img src="data:image/jpg;base64,{logo_data}" style="width:80px; margin-right:15px;" alt="SCM Analytics Logo"/>
+    <h1 style="margin:0; font-size:2rem;">Value Investing Checklist (Year-by-Year)</h1>
 </div>
 """
 st.markdown(top_html, unsafe_allow_html=True)
 
+# ==========================================================
+# Input Section: Ticker Symbol
+# ==========================================================
 ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
-
-# rest of your code...
-
 
 # ==========================================================
 # Data Loading & Utility Functions
@@ -39,9 +39,9 @@ def get_data(ticker):
     info = stock.info
     bs = stock.balance_sheet if stock.balance_sheet is not None else pd.DataFrame()
     fin = stock.financials if stock.financials is not None else pd.DataFrame()
-    # We will calculate EPS manually as earnings is deprecated.
+    # We calculate EPS manually; ignore stock.earnings as it's deprecated.
     earnings = pd.DataFrame()  
-    # Restrict history to last 10 years.
+    # Restrict historical price data to 10 years.
     hist = stock.history(period="10y")
     div = stock.dividends if stock.dividends is not None else pd.Series(dtype="float64")
     return info, bs, fin, earnings, hist, div
@@ -70,22 +70,22 @@ def format_percent(value):
         return str(value)
 
 # ==========================================================
-# Main Processing Block
+# MAIN PROCESSING BLOCK
 # ==========================================================
 if ticker:
     try:
         info, bs, fin, earnings, hist, div = get_data(ticker)
         fiscal_years = get_recent_years(fin, 10)
-        # Fallback: if fewer than 10 fiscal years exist, use the last 5 years.
+        # Fallback: if fewer than 10 years exist, use last 5 years.
         if len(fiscal_years) < 10:
             fiscal_years = get_recent_years(fin, 5)
-        
-        # ======================================================
-        # TOP SECTION: Price History Chart (Last 10 Years)
-        # ======================================================
+
+        # ----------------------------
+        # TOP SECTION: Stock Price Chart (Last 10 Years)
+        # ----------------------------
         st.subheader("📈 Stock Price (Last 10 Years)")
         fig_price, ax_price = plt.subplots(figsize=(10, 3))
-        # Resample using month-end frequency ("ME")
+        # Resample by month-end ('ME') to avoid deprecated 'M'
         hist["Close"].resample("ME").last().plot(ax=ax_price, color="orange")
         ax_price.set_title(f"{ticker} Monthly Closing Prices")
         ax_price.set_xlabel("Date")
@@ -93,13 +93,13 @@ if ticker:
         ax_price.grid(True)
         st.pyplot(fig_price)
 
-        # ======================================================
-        # EVALUATION: Build Summary Table and Collect Yearly Data
-        # ======================================================
+        # ----------------------------
+        # EVALUATION: Build Summary & Gather Yearly Data
+        # ----------------------------
         summary = []  # List of tuples: (Metric, Pass/Fail, Value/Details)
-        metric_data = {}  # Dictionary: Metric name -> {year: value}
+        metric_data = {}  # Dictionary: Metric Name -> {year: value}
 
-        # Helper function to evaluate a metric over each fiscal year:
+        # Helper function: Evaluate metric across fiscal years.
         def evaluate_metric(metric_name, values_dict, threshold=None, comparison=">", is_percent=True):
             fails = 0
             data = {}
@@ -108,7 +108,7 @@ if ticker:
                 if v is None:
                     data[y] = "Missing"
                 else:
-                    # Convert numeric value to percent if needed:
+                    # Convert value to percentage if required.
                     pv = v * 100 if is_percent else v
                     data[y] = round(pv, 2)
                     if threshold is not None:
@@ -143,7 +143,7 @@ if ticker:
         evaluate_metric("ROA ≥ 12%", roa_vals, threshold=0.12)
 
         # ---- Metric 3: Historical EPS Per Share ----
-        # Calculate EPS manually as: Net Income / Shares Outstanding (from info)
+        # Calculate EPS manually as Net Income / Shares Outstanding.
         eps_vals = {}
         shares = info.get("sharesOutstanding", None)
         for y in fiscal_years:
@@ -155,7 +155,6 @@ if ticker:
                     eps_vals[y] = None
             except:
                 eps_vals[y] = None
-        # No pass/fail is evaluated for EPS; simply show available data.
         metric_data["EPS Per Share"] = {y: (round(v*100, 2) if v is not None else "Missing") for y, v in eps_vals.items()}
         available_eps = sum(1 for v in eps_vals.values() if v is not None)
         summary.append(("EPS Per Share", "—", f"{available_eps} / {len(fiscal_years)} years available"))
@@ -212,7 +211,7 @@ if ticker:
         summary.append(("Pricing Power vs. Inflation", "—", pricing_comment))
 
         # ---- Metric 9: Organized Labor (Commentary) ----
-        labor_comment = "Review SEC 10-K filings and recent news for union contracts and labor disputes. [Example Source: Reuters, 2023] (EXAMPLE – Research on Your Own)"
+        labor_comment = "Review the company's SEC 10-K filings and recent news for union contracts, strike risks, and labor disputes. [Example Source: Reuters, 2023] (EXAMPLE – Research on Your Own)"
         summary.append(("Organized Labor", "—", labor_comment))
 
         # ---- Metric 11: Dividends & Buybacks (Commentary) ----
@@ -251,17 +250,18 @@ if ticker:
         st.table(df_summary)
 
         # ======================================================
-        # MIDDLE SECTION: Charts + Tables (wrapped in Expanders & Tabs)
+        # MIDDLE SECTION: Charts + Tables in Expanders & Tabs
         # ======================================================
         st.subheader("📊 Metrics (Year-by-Year Charts & Tables)")
         for metric, data in metric_data.items():
             with st.expander(f"{metric} Trend (Click to Expand)", expanded=False):
                 tab_chart, tab_table = st.tabs(["Chart", "Table"])
-                # Prepare DataFrame for charting and display:
+                # Prepare DataFrame for the metric:
                 df_metric = pd.DataFrame.from_dict(data, orient="index", columns=["Value"])
                 df_metric.index = df_metric.index.map(lambda y: int(y))
                 df_metric["Value"] = df_metric["Value"].apply(lambda x: float(x) if isinstance(x, (int, float)) else None)
-                # Create chart using matplotlib
+                
+                # Chart using matplotlib
                 fig, ax = plt.subplots(figsize=(8, 3))
                 ax.plot(df_metric.index, df_metric["Value"], marker="o", color="tab:blue")
                 ax.set_title(metric)
@@ -270,7 +270,8 @@ if ticker:
                 ax.set_xticks(df_metric.index)
                 ax.grid(True, linestyle="--", linewidth=0.5)
                 st.pyplot(fig, clear_figure=True)
-                # Display table:
+                
+                # Table display
                 df_display = df_metric.copy()
                 df_display["Value"] = df_display["Value"].apply(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) else "Missing")
                 tab_table.dataframe(df_display)
@@ -288,7 +289,7 @@ if ticker:
         st.markdown("### LT Debt ÷ Net Income")
         st.markdown("Refer to the Summary Table above for the latest LT Debt ÷ Net Income commentary.")
         st.markdown("### Dividends & Buybacks")
-        st.markdown("Review the Summary Table for dividend history and evidence of dividend/repurchase cuts.")
+        st.markdown("Review the Summary Table for dividend history and any evidence of dividend/repurchase cuts.")
 
         # ======================================================
         # EXPORT SECTION: Download Summary as CSV
