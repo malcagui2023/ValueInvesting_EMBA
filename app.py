@@ -52,7 +52,7 @@ st.markdown(top_html, unsafe_allow_html=True)
 # ==========================================================
 # Input: Ticker Symbol
 # ==========================================================
-ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
+ticker = st.text_input("Enter Ticker Symbol (e.g., MELI, AAPL, MO, NVDA)", value="MELI")
 
 # ==========================================================
 # Data Loading & Utility Functions
