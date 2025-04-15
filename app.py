@@ -6,11 +6,30 @@ import base64
 from io import BytesIO
 import datetime
 
-# MUST be the very first Streamlit command!
+# ==========================================================
+# Chart Theme: Dark Theme via Matplotlib
+# ==========================================================
+plt.style.use("dark_background")
+plt.rcParams.update({
+    "axes.facecolor": "#1e1e1e",
+    "figure.facecolor": "#1e1e1e",
+    "axes.edgecolor": "#444444",
+    "axes.labelcolor": "white",
+    "xtick.color": "white",
+    "ytick.color": "white",
+    "text.color": "white",
+    "grid.color": "#444444",
+    "grid.linestyle": "--",
+    "legend.edgecolor": "white"
+})
+
+# ==========================================================
+# Page Configuration (must be first st command)
+# ==========================================================
 st.set_page_config(page_title="Value Investing Checklist", layout="wide")
 
 # ==========================================================
-# Top Section: Logo + Title using HTML with inline base64 image
+# Top Section: Logo + Title + Byline
 # ==========================================================
 def load_logo_base64(logo_path: str) -> str:
     with open(logo_path, "rb") as f:
@@ -18,15 +37,20 @@ def load_logo_base64(logo_path: str) -> str:
 
 logo_data = load_logo_base64("SCM-Analytics Logo.jfif")
 top_html = f"""
-<div style="display:flex; align-items:center; margin-bottom:1rem;">
-    <img src="data:image/jpg;base64,{logo_data}" style="width:80px; margin-right:15px;" alt="SCM Analytics Logo"/>
-    <h1 style="margin:0; font-size:2rem;">Value Investing Checklist (Year-by-Year)</h1>
+<div style="display:flex; align-items:center; margin-bottom:0.5rem;">
+    <a href="https://scm-analytics.com/" target="_blank">
+        <img src="data:image/jpg;base64,{logo_data}" style="width:80px; margin-right:15px;" alt="SCM Analytics Logo"/>
+    </a>
+    <div>
+        <h1 style="margin:0; font-size:2rem;">Value Investing Checklist (Year-by-Year)</h1>
+        <p style="margin:0; font-size:1rem; color:lightgray;">By Manuel A. Casas</p>
+    </div>
 </div>
 """
 st.markdown(top_html, unsafe_allow_html=True)
 
 # ==========================================================
-# Input Section: Ticker Symbol
+# Input: Ticker Symbol
 # ==========================================================
 ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
 
@@ -39,7 +63,7 @@ def get_data(ticker):
     info = stock.info
     bs = stock.balance_sheet if stock.balance_sheet is not None else pd.DataFrame()
     fin = stock.financials if stock.financials is not None else pd.DataFrame()
-    # We calculate EPS manually; ignore stock.earnings as it's deprecated.
+    # We will calculate EPS manually; ignore stock.earnings as it's deprecated.
     earnings = pd.DataFrame()  
     # Restrict historical price data to 10 years.
     hist = stock.history(period="10y")
@@ -76,16 +100,15 @@ if ticker:
     try:
         info, bs, fin, earnings, hist, div = get_data(ticker)
         fiscal_years = get_recent_years(fin, 10)
-        # Fallback: if fewer than 10 years exist, use last 5 years.
+        # Fallback: if fewer than 10 years are available, use the last 5.
         if len(fiscal_years) < 10:
             fiscal_years = get_recent_years(fin, 5)
-
-        # ----------------------------
+        
+        # ----------------------------------------------------------
         # TOP SECTION: Stock Price Chart (Last 10 Years)
-        # ----------------------------
+        # ----------------------------------------------------------
         st.subheader("📈 Stock Price (Last 10 Years)")
         fig_price, ax_price = plt.subplots(figsize=(10, 3))
-        # Resample by month-end ('ME') to avoid deprecated 'M'
         hist["Close"].resample("ME").last().plot(ax=ax_price, color="orange")
         ax_price.set_title(f"{ticker} Monthly Closing Prices")
         ax_price.set_xlabel("Date")
@@ -93,13 +116,12 @@ if ticker:
         ax_price.grid(True)
         st.pyplot(fig_price)
 
-        # ----------------------------
-        # EVALUATION: Build Summary & Gather Yearly Data
-        # ----------------------------
-        summary = []  # List of tuples: (Metric, Pass/Fail, Value/Details)
-        metric_data = {}  # Dictionary: Metric Name -> {year: value}
+        # ----------------------------------------------------------
+        # EVALUATION: Build Summary Table and Collect Yearly Data
+        # ----------------------------------------------------------
+        summary = []  # List of (Metric, Pass/Fail, Value/Details)
+        metric_data = {}  # Dict: Metric Name -> {year: value}
 
-        # Helper function: Evaluate metric across fiscal years.
         def evaluate_metric(metric_name, values_dict, threshold=None, comparison=">", is_percent=True):
             fails = 0
             data = {}
@@ -108,7 +130,6 @@ if ticker:
                 if v is None:
                     data[y] = "Missing"
                 else:
-                    # Convert value to percentage if required.
                     pv = v * 100 if is_percent else v
                     data[y] = round(pv, 2)
                     if threshold is not None:
@@ -143,7 +164,7 @@ if ticker:
         evaluate_metric("ROA ≥ 12%", roa_vals, threshold=0.12)
 
         # ---- Metric 3: Historical EPS Per Share ----
-        # Calculate EPS manually as Net Income / Shares Outstanding.
+        # Calculate EPS manually as: Net Income / Shares Outstanding.
         eps_vals = {}
         shares = info.get("sharesOutstanding", None)
         for y in fiscal_years:
@@ -261,7 +282,7 @@ if ticker:
                 df_metric.index = df_metric.index.map(lambda y: int(y))
                 df_metric["Value"] = df_metric["Value"].apply(lambda x: float(x) if isinstance(x, (int, float)) else None)
                 
-                # Chart using matplotlib
+                # Create matplotlib chart:
                 fig, ax = plt.subplots(figsize=(8, 3))
                 ax.plot(df_metric.index, df_metric["Value"], marker="o", color="tab:blue")
                 ax.set_title(metric)
@@ -271,7 +292,7 @@ if ticker:
                 ax.grid(True, linestyle="--", linewidth=0.5)
                 st.pyplot(fig, clear_figure=True)
                 
-                # Table display
+                # Display table:
                 df_display = df_metric.copy()
                 df_display["Value"] = df_display["Value"].apply(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) else "Missing")
                 tab_table.dataframe(df_display)
@@ -297,6 +318,12 @@ if ticker:
         st.subheader("📥 Export Results")
         csv_data = df_summary.to_csv(index=False).encode("utf-8")
         st.download_button("📤 Download Summary CSV", csv_data, file_name=f"{ticker}_summary.csv", mime="text/csv")
+
+        # ======================================================
+        # DISCLAIMER (Bottom of the Page)
+        # ======================================================
+        st.markdown("---")
+        st.markdown("<small>Disclaimer: This app is for informational purposes only. Data is sourced from Yahoo Finance and is dependent on data availability. SCM-Analytics does not guarantee the accuracy of the information and is not responsible for any investment decisions made based on this data.</small>", unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"Error processing ticker: {e}")
