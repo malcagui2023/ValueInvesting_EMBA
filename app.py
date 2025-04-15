@@ -6,9 +6,10 @@ import base64
 from io import BytesIO
 import datetime
 
-plt.style.use("dark_background")
-...
+# Must be the very first st command:
+st.set_page_config(page_title="Value Investing Checklist", layout="wide")
 
+# Now you can include your other code
 def load_logo_base64(logo_path: str) -> str:
     with open(logo_path, "rb") as f:
         return base64.b64encode(f.read()).decode()
