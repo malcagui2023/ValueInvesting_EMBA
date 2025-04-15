@@ -2,44 +2,32 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
+import base64
 from io import BytesIO
 import datetime
 
-# ==========================================================
-# Chart Theme: Dark Theme via Matplotlib
-# ==========================================================
 plt.style.use("dark_background")
-plt.rcParams.update({
-    "axes.facecolor": "#1e1e1e",
-    "figure.facecolor": "#1e1e1e",
-    "axes.edgecolor": "#444444",
-    "axes.labelcolor": "white",
-    "xtick.color": "white",
-    "ytick.color": "white",
-    "text.color": "white",
-    "grid.color": "#444444",
-    "grid.linestyle": "--",
-    "legend.edgecolor": "white"
-})
+...
 
-# ==========================================================
-# Page Configuration
-# ==========================================================
+def load_logo_base64(logo_path: str) -> str:
+    with open(logo_path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
 st.set_page_config(page_title="Value Investing Checklist", layout="wide")
 
-# ----------------------------
-# Top Section: Logo + Title
-# ----------------------------
-logo_col, title_col = st.columns([1, 5])
-with logo_col:
-    st.image("SCM-Analytics Logo.jfif", use_column_width=True)
-with title_col:
-    st.title("Value Investing Checklist (Year-by-Year)")
+logo_data = load_logo_base64("SCM-Analytics Logo.jfif")
+top_html = f"""
+<div style="display:flex; align-items:center; margin-bottom:1rem;">
+    <img src="data:image/jpg;base64,{logo_data}" style="width:60px; margin-right:15px;" alt="SCM Analytics Logo"/>
+    <h1 style="margin:0; font-size:1.75rem;">Value Investing Checklist (Year-by-Year)</h1>
+</div>
+"""
+st.markdown(top_html, unsafe_allow_html=True)
 
-# ==========================================================
-# Input: Ticker Symbol
-# ==========================================================
 ticker = st.text_input("Enter Ticker Symbol (e.g., AAPL, NVDA)", value="AAPL")
+
+# rest of your code...
+
 
 # ==========================================================
 # Data Loading & Utility Functions
